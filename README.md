@@ -4,15 +4,10 @@ An AI-powered travel planner.
 
 ## Progress 1
 
-### Feature
-
+Features:  
 Trip summary generator (console app)
 
-### Results
+## Progress 2
 
-- Working Python console application
-- Git repository initialized
-- First Git commit
-- Trip summary feature
-- KelanaAI project structure
-
+Features:  
+Recommendation Engine
