@@ -10,4 +10,9 @@ Trip summary generator (console app)
 ## Progress 2
 
 Features:  
-Recommendation Engine
+Recommendation engine
+
+## Progress 3
+
+Features:  
+REST API (FastAPI)
