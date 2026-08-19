@@ -16,3 +16,8 @@ Recommendation engine
 
 Features:  
 REST API (FastAPI)
+
+## Progress 4
+
+Features:  
+PostgreSQL Database Integration
