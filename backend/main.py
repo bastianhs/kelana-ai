@@ -8,6 +8,7 @@ from services.trip_service import (
 )
 from models.trip import Trip
 from database import init_db, SessionLocal
+from services.bedrock_service import get_ai_recommendation
 
 
 class TripRequest(BaseModel):
@@ -36,13 +37,20 @@ def create_trip(request: TripRequest):
     daily_budget: float = calculate_daily_budget(request.budget, request.days)
     category: str = get_trip_category(request.budget)
     transportation: str = get_transportation(request.travel_style)
+    ai_recommendation: str = get_ai_recommendation(
+        destination=request.destination,
+        days=request.days,
+        budget=request.budget,
+        travel_style=request.travel_style
+    )
 
     trip = Trip(
         destination=request.destination,
         days=request.days,
         budget=request.budget,
         category=category,
-        daily_budget=daily_budget
+        daily_budget=daily_budget,
+        ai_recommendation=ai_recommendation
     )
     
     db = SessionLocal()

@@ -21,3 +21,8 @@ REST API (FastAPI)
 
 Features:  
 PostgreSQL Database Integration
+
+## Progress 5
+
+Features:  
+AI-Powered Trip Recommendation
