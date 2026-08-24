@@ -26,3 +26,8 @@ PostgreSQL Database Integration
 
 Features:  
 AI-Powered Trip Recommendation
+
+## Progress 6
+
+Features:  
+Next.js Frontend
