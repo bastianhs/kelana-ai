@@ -31,3 +31,8 @@ AI-Powered Trip Recommendation
 
 Features:  
 Next.js Frontend
+
+## Progress 7
+
+Features:  
+Trip Dashboard

@@ -1,19 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-
-type Trip = {
-  id: number;
-  destination: string;
-  days: number;
-  budget: number;
-  travel_style: string;
-  category: string;
-  daily_budget: number;
-  ai_recommendation: string;
-  created_at: string;
-};
+import { type Trip, generateTrip } from "@/services/tripService";
+import Navbar from "@/components/Navbar";
 
 const TRAVEL_STYLES = ["Adventure", "Family", "Luxury", "Backpacker", "Cultural", "Romantic"];
 
@@ -423,6 +414,7 @@ function Footer() {
 // Main Page
 // ---------------------------------------------------------------------------
 export default function Home() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     destination: "",
     budget: "",
@@ -450,24 +442,15 @@ export default function Home() {
     setTrip(null);
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/trips", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          destination: formData.destination,
-          budget: parseInt(formData.budget),
-          days: parseInt(formData.days),
-          travel_style: formData.travelStyle,
-        }),
+      const data = await generateTrip({
+        destination: formData.destination,
+        budget: parseInt(formData.budget),
+        days: parseInt(formData.days),
+        travel_style: formData.travelStyle,
       });
-
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
-      }
-
-      const data: Trip = await response.json();
       setTrip(data);
       setHeroDestination(data.destination);
+      router.push("/trips");
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -500,18 +483,7 @@ export default function Home() {
       {/* ------------------------------------------------------------------ */}
       {/* Header / Nav                                                         */}
       {/* ------------------------------------------------------------------ */}
-      <header className="relative z-10 w-full border-b border-slate-800/50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-gradient font-black tracking-tight">Kelana</span>
-            <span className="text-slate-100 font-black tracking-tight">AI</span>
-          </div>
-          <div className="inline-flex items-center gap-1.5 badge-glow rounded-full px-3 py-1 text-xs text-blue-300 font-semibold uppercase tracking-widest">
-            <div className="ai-dot" style={{ width: 6, height: 6 }} />
-            Powered by AI
-          </div>
-        </div>
-      </header>
+      <Navbar />
 
       {/* ------------------------------------------------------------------ */}
       {/* Main content                                                         */}

@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
+from enum import Enum
 from services.trip_service import (
     calculate_daily_budget,
     get_trip_category,
@@ -10,6 +11,7 @@ from services.trip_service import (
 from models.trip import Trip
 from database import init_db, SessionLocal
 from services.bedrock_service import get_ai_recommendation
+from dotenv import load_dotenv
 
 
 class TripRequest(BaseModel):
@@ -18,10 +20,23 @@ class TripRequest(BaseModel):
     budget: float
     travel_style: str
 
+class SortBy(str, Enum):
+    latest = "latest"
+    oldest = "oldest"
+    highest_budget = "highest_budget"
+
+class PaginatedTrips(BaseModel):
+    items: list[Any]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+load_dotenv()
 init_db()
 app: FastAPI = FastAPI()
 
-# CORS configuration
+# CORS configuration    
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -99,12 +114,42 @@ def generate_ai_recommendation(id: int):
     return trip
 
 @app.get("/api/v1/trips")
-def list_trips():
+def list_trips(
+    search: Optional[str] = Query(default=None, description="Keyword search against destination or travel style"),
+    sort_by: SortBy = Query(default=SortBy.latest, description="Sort order: latest, oldest, highest_budget"),
+    page: int = Query(default=1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(default=10, ge=1, le=100, description="Items per page"),
+):
     db = SessionLocal()
-    trips = db.query(Trip).all()
+    query = db.query(Trip)
+
+    # Text search
+    if search:
+        term = f"%{search}%"
+        query = query.filter(
+            Trip.destination.ilike(term) | Trip.travel_style.ilike(term)
+        )
+
+    # Sorting
+    if sort_by == SortBy.latest:
+        query = query.order_by(Trip.created_at.desc())
+    elif sort_by == SortBy.oldest:
+        query = query.order_by(Trip.created_at.asc())
+    elif sort_by == SortBy.highest_budget:
+        query = query.order_by(Trip.budget.desc())
+
+    total = query.count()
+    total_pages = max(1, -(-total // page_size))  # ceiling division
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
     db.close()
 
-    return trips
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 @app.get("/api/v1/trips/{trip_id}")
 def get_trip(trip_id: int):
