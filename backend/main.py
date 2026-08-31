@@ -13,6 +13,7 @@ from models.trip import Trip
 from models.user import User
 from database import init_db, SessionLocal
 from services.bedrock_service import get_ai_recommendation
+from services.kb_service import ask_knowledge_base
 from dotenv import load_dotenv
 
 
@@ -30,6 +31,9 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class QuestionRequest(BaseModel):
+    question: str
 
 class SortBy(str, Enum):
     latest = "latest"
@@ -317,3 +321,18 @@ def get_trip_transportations() -> list[str]:
         "Train",
         "Flight"
     ]
+
+@app.post("/api/v1/ask")
+def ask(
+    request: QuestionRequest,
+    current_user: User = Depends(get_authorized_user)
+):
+    try:
+        result = ask_knowledge_base(request.question)
+        return {
+            "question": request.question,
+            "answer": result["answer"],
+            "documents": result["documents"],
+        }
+    except EnvironmentError as e:
+        raise HTTPException(status_code=500, detail=str(e))

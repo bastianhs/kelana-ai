@@ -41,3 +41,8 @@ Trip Dashboard
 
 Features:  
 User Authentication with JWT
+
+## Progress 9
+
+Features:  
+Retrieval-Augmented Generation
