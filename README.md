@@ -36,3 +36,8 @@ Next.js Frontend
 
 Features:  
 Trip Dashboard
+
+## Progress 8
+
+Features:  
+User Authentication with JWT

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -8,7 +8,9 @@ from services.trip_service import (
     get_trip_category,
     get_transportation
 )
+from services.auth_service import register, login, verify_token
 from models.trip import Trip
+from models.user import User
 from database import init_db, SessionLocal
 from services.bedrock_service import get_ai_recommendation
 from dotenv import load_dotenv
@@ -19,6 +21,15 @@ class TripRequest(BaseModel):
     days: int
     budget: float
     travel_style: str
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class SortBy(str, Enum):
     latest = "latest"
@@ -31,6 +42,24 @@ class PaginatedTrips(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+# Dependency for JWT verification
+def get_authorized_user(authorization: Optional[str] = Header(None)) -> User:
+    """Extract and verify JWT token from Authorization header."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Extract token from "Bearer <token>"
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+    
+    token = parts[1]
+    try:
+        user = verify_token(token)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
 load_dotenv()
 init_db()
@@ -61,8 +90,51 @@ def check_health() -> dict[str, str]:
         "status": "OK"
     }
 
+@app.post("/api/v1/auth/register")
+def register_user(request: RegisterRequest):
+    try:
+        response = register(request.name, request.email, request.password)
+        return {"data": response}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/v1/auth/login")
+def login_user(request: LoginRequest):
+    try:
+        response = login(request.email, request.password)
+        return {"data": response}
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+@app.get("/api/v1/auth/users/current")
+def get_current_user(current_user: User = Depends(get_authorized_user)):
+    return {
+        "data": {
+            "id": current_user.id,
+            "name": current_user.name,
+            "email": current_user.email
+        }
+    }
+
+@app.get("/api/v1/auth/me")
+def get_me(current_user: User = Depends(get_authorized_user)):
+    db = SessionLocal()
+    total_trips = db.query(Trip).filter(Trip.user_id == current_user.id).count()
+    db.close()
+    return {
+        "data": {
+            "id": current_user.id,
+            "name": current_user.name,
+            "email": current_user.email,
+            "total_trips": total_trips,
+        }
+    }
+
 @app.post("/api/v1/trips")
-def create_trip(request: TripRequest):
+def create_trip(
+    request: TripRequest,
+    current_user: User = Depends(get_authorized_user)
+):
     daily_budget: float = calculate_daily_budget(request.budget, request.days)
     category: str = get_trip_category(request.budget)
     transportation: str = get_transportation(request.travel_style)
@@ -74,6 +146,7 @@ def create_trip(request: TripRequest):
     )
 
     trip = Trip(
+        user_id=current_user.id,
         destination=request.destination,
         days=request.days,
         budget=request.budget,
@@ -91,37 +164,38 @@ def create_trip(request: TripRequest):
 
     return trip
 
-@app.post("/api/v1/trips/{id}/generate")
-def generate_ai_recommendation(id: int):
-    db = SessionLocal()
-    trip = db.query(Trip).filter(Trip.id == id).first()
+# @app.post("/api/v1/trips/{id}/generate")
+# def generate_ai_recommendation(id: int):
+#     db = SessionLocal()
+#     trip = db.query(Trip).filter(Trip.id == id).first()
     
-    if trip is None:
-        db.close()
-        raise HTTPException(status_code=404, detail=f"Trip with id {id} not found")
+#     if trip is None:
+#         db.close()
+#         raise HTTPException(status_code=404, detail=f"Trip with id {id} not found")
 
-    ai_recommendation: str = get_ai_recommendation(
-        destination=trip.destination,
-        days=trip.days,
-        budget=trip.budget,
-        travel_style=trip.travel_style
-    )
-    trip.ai_recommendation = ai_recommendation
-    db.commit()
-    db.refresh(trip)
-    db.close()
+#     ai_recommendation: str = get_ai_recommendation(
+#         destination=trip.destination,
+#         days=trip.days,
+#         budget=trip.budget,
+#         travel_style=trip.travel_style
+#     )
+#     trip.ai_recommendation = ai_recommendation
+#     db.commit()
+#     db.refresh(trip)
+#     db.close()
 
-    return trip
+#     return trip
 
 @app.get("/api/v1/trips")
 def list_trips(
+    current_user: User = Depends(get_authorized_user),
     search: Optional[str] = Query(default=None, description="Keyword search against destination or travel style"),
     sort_by: SortBy = Query(default=SortBy.latest, description="Sort order: latest, oldest, highest_budget"),
     page: int = Query(default=1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(default=10, ge=1, le=100, description="Items per page"),
 ):
     db = SessionLocal()
-    query = db.query(Trip)
+    query = db.query(Trip).filter(Trip.user_id == current_user.id)
 
     # Text search
     if search:
@@ -152,24 +226,38 @@ def list_trips(
     }
 
 @app.get("/api/v1/trips/{trip_id}")
-def get_trip(trip_id: int):
+def get_trip(
+    trip_id: int,
+    current_user: User = Depends(get_authorized_user)
+):
     db = SessionLocal()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
     db.close()
-
+    
     if trip is None:
         raise HTTPException(status_code=404, detail=f"Trip with id {trip_id} not found")
+    
+    if trip.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this trip")
 
     return trip
 
 @app.put("/api/v1/trips/{id}")
-def update_trip(id: int, request: TripRequest):
+def update_trip(
+    id: int,
+    request: TripRequest,
+    current_user: User = Depends(get_authorized_user)
+):
     db = SessionLocal()
     trip = db.query(Trip).filter(Trip.id == id).first()
     
     if trip is None:
         db.close()
         raise HTTPException(status_code=404, detail=f"Trip with id {id} not found")
+    
+    if trip.user_id != current_user.id:
+        db.close()
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this trip")
 
     category: str = get_trip_category(request.budget)
     daily_budget: float = calculate_daily_budget(request.budget, request.days)
@@ -185,13 +273,20 @@ def update_trip(id: int, request: TripRequest):
     return trip
 
 @app.delete("/api/v1/trips/{id}")
-def delete_trip(id: int):
+def delete_trip(
+    id: int,
+    current_user: User = Depends(get_authorized_user)
+):
     db = SessionLocal()
     trip = db.query(Trip).filter(Trip.id == id).first()
     
     if trip is None:
         db.close()
         raise HTTPException(status_code=404, detail=f"Trip with id {id} not found")
+    
+    if trip.user_id != current_user.id:
+        db.close()
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this trip")
 
     db.delete(trip)
     db.commit()

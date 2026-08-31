@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import TripCard from "@/components/TripCard";
 import Navbar from "@/components/Navbar";
+import { useAuth } from "@/context/AuthContext";
 import { getTrips, type PaginatedTrips, type SortBy } from "@/services/tripService";
 
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
@@ -163,17 +165,27 @@ function Pagination({
 // Page
 // ---------------------------------------------------------------------------
 export default function TripsPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
   const [search,  setSearch]  = useState("");
   const [sortBy,  setSortBy]  = useState<SortBy>("latest");
   const [page,    setPage]    = useState(1);
   const [data,    setData]    = useState<PaginatedTrips | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
-
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  
   // Debounce search: only fire after 350 ms of silence
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Debounce search effect - must be declared unconditionally
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
@@ -204,6 +216,23 @@ export default function TripsPage() {
   }, [debouncedSearch, sortBy, page]);
 
   useEffect(() => { fetchTrips(); }, [fetchTrips]);
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="relative w-16 h-16">
+          <div className="absolute inset-0 rounded-full border-2 border-blue-500/20" />
+          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (while redirecting)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   // Reset to page 1 when sort changes
   const handleSortChange = (value: SortBy) => {

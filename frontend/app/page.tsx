@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { type Trip, generateTrip } from "@/services/tripService";
+import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/Navbar";
 
 const TRAVEL_STYLES = ["Adventure", "Family", "Luxury", "Backpacker", "Cultural", "Romantic"];
@@ -415,6 +416,7 @@ function Footer() {
 // ---------------------------------------------------------------------------
 export default function Home() {
   const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
   const [formData, setFormData] = useState({
     destination: "",
     budget: "",
@@ -427,6 +429,30 @@ export default function Home() {
 
   // The hero image destination — updates after a successful trip is returned
   const [heroDestination, setHeroDestination] = useState("");
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="relative w-16 h-16">
+          <div className="absolute inset-0 rounded-full border-2 border-blue-500/20" />
+          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (while redirecting)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFormData({ ...formData, [e.target.name]: e.target.value });

@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams, notFound } from "next/navigation";
+import { useParams, notFound, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import { useAuth } from "@/context/AuthContext";
 import { getTrip, type Trip } from "@/services/tripService";
 
 // ---------------------------------------------------------------------------
@@ -263,11 +264,20 @@ function TripDetail({ trip }: { trip: Trip }) {
 // ---------------------------------------------------------------------------
 export default function TripDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const id = Number(params.id);
 
   const [trip,    setTrip]    = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   useEffect(() => {
     if (!id || isNaN(id)) {
@@ -289,6 +299,11 @@ export default function TripDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Don't render if not authenticated (while redirecting)
+  if (!isAuthenticated && !authLoading) {
+    return null;
+  }
 
   return (
     <div className="relative min-h-screen">
