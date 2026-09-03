@@ -12,4 +12,6 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False)
 Base = declarative_base()
 
 def init_db() -> None:
+    import models.user
+    import models.trip    
     Base.metadata.create_all(bind=engine)
