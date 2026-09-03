@@ -46,3 +46,8 @@ User Authentication with JWT
 
 Features:  
 Retrieval-Augmented Generation
+
+## Progress 10
+
+Features:  
+Conversational AI Chat
