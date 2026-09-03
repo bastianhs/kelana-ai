@@ -9,10 +9,18 @@ from services.trip_service import (
     get_transportation
 )
 from services.auth_service import register, login, verify_token
+from services.conversation_service import (
+    create_conversation,
+    list_conversations,
+    update_conversation,
+    create_message,
+    list_messages,
+)
+from models.conversation import Conversation
 from models.trip import Trip
 from models.user import User
 from database import init_db, SessionLocal
-from services.bedrock_service import get_ai_recommendation
+from services.bedrock_service import get_ai_recommendation, get_conversation_ai_reply
 from services.kb_service import ask_knowledge_base
 from dotenv import load_dotenv
 
@@ -34,6 +42,12 @@ class LoginRequest(BaseModel):
 
 class QuestionRequest(BaseModel):
     question: str
+
+class ConversationRequest(BaseModel):
+    title: str = "New Conversation"
+
+class SendMessageRequest(BaseModel):
+    content: str
 
 class SortBy(str, Enum):
     latest = "latest"
@@ -336,3 +350,143 @@ def ask(
         }
     except EnvironmentError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/conversations", status_code=201)
+def create_conversation_endpoint(
+    request: ConversationRequest,
+    current_user: User = Depends(get_authorized_user)
+):
+    conversation = create_conversation(user_id=current_user.id, title=request.title)
+    return {
+        "data": {
+            "id": conversation.id,
+            "user_id": conversation.user_id,
+            "title": conversation.title,
+            "created_at": conversation.created_at
+        }
+    }
+
+@app.get("/api/v1/conversations")
+def list_conversations_endpoint(
+    current_user: User = Depends(get_authorized_user)
+):
+    conversations = list_conversations(user_id=current_user.id)
+    return {
+        "data": [
+            {
+                "id": c.id,
+                "user_id": c.user_id,
+                "title": c.title,
+                "created_at": c.created_at
+            } for c in conversations
+        ]
+    }
+
+@app.patch("/api/v1/conversations/{conversation_id}")
+def update_conversation_endpoint(
+    conversation_id: int,
+    request: ConversationRequest,
+    current_user: User = Depends(get_authorized_user)
+):
+    _get_conversation_for_user(conversation_id, current_user.id)
+    conversation = update_conversation(conversation_id=conversation_id, title=request.title)
+    return {
+        "data": {
+            "id": conversation.id,
+            "user_id": conversation.user_id,
+            "title": conversation.title,
+            "created_at": conversation.created_at
+        }
+    }
+
+def _get_conversation_for_user(conversation_id: int, user_id: int) -> Conversation:
+    """Fetch a conversation and verify it belongs to the user."""
+    db = SessionLocal()
+    try:
+        conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    finally:
+        db.close()
+
+    if conversation is None:
+        raise HTTPException(status_code=404, detail=f"Conversation with id {conversation_id} not found")
+    if conversation.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have access to this conversation")
+    return conversation
+
+@app.post("/api/v1/conversations/{conversation_id}/messages", status_code=201)
+def send_message(
+    conversation_id: int,
+    request: SendMessageRequest,
+    current_user: User = Depends(get_authorized_user)
+):
+    """
+    Send a user message and receive an AI reply.
+
+    Orchestration (backend-owned):
+      1. Receive user message
+      2. Save user message to DB
+      3. Load previous messages (conversation history)
+      4. Build prompt from full history
+      5. Call Amazon Bedrock
+      6. Save AI response to DB
+      7. Return AI response
+    """
+    # 1. Verify conversation belongs to the user
+    _get_conversation_for_user(conversation_id, current_user.id)
+
+    # 2. Save the user message
+    create_message(conversation_id=conversation_id, role="user", content=request.content)
+
+    # 3. Load previous messages (now includes the one we just saved)
+    history = list_messages(conversation_id=conversation_id)
+
+    # 4 & 5. Build prompt from full history and call Bedrock.
+    # Pass all messages except the last one as history; the last is the new user message.
+    prior_history = [{"role": m.role, "content": m.content} for m in history[:-1]]
+
+    try:
+        ai_reply = get_conversation_ai_reply(
+            history=prior_history,
+            user_message=request.content,
+        )
+    except EnvironmentError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # 6. Save AI response
+    assistant_message = create_message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=ai_reply,
+    )
+
+    # 7. Return AI response
+    return {
+        "data": {
+            "id": assistant_message.id,
+            "conversation_id": assistant_message.conversation_id,
+            "role": assistant_message.role,
+            "content": assistant_message.content,
+            "created_at": assistant_message.created_at,
+        }
+    }
+
+
+@app.get("/api/v1/conversations/{conversation_id}/messages")
+def list_messages_endpoint(
+    conversation_id: int,
+    current_user: User = Depends(get_authorized_user)
+):
+    _get_conversation_for_user(conversation_id, current_user.id)
+    messages = list_messages(conversation_id=conversation_id)
+    return {
+        "data": [
+            {
+                "id": m.id,
+                "conversation_id": m.conversation_id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at,
+            }
+            for m in messages
+        ]
+    }

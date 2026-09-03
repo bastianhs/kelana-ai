@@ -1,5 +1,6 @@
 import os
 import boto3
+from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -84,6 +85,55 @@ def get_ai_recommendation(
                 "content": [{"text": prompt}],
             }
         ],
+    )
+
+    return response["output"]["message"]["content"][0]["text"]
+
+
+def get_conversation_ai_reply(
+    history: List[dict],
+    user_message: str,
+) -> str:
+    """Call Amazon Bedrock with full conversation history and return the assistant reply.
+
+    Args:
+        history:      List of previous messages in chronological order.
+                      Each item must have ``role`` ("user" | "assistant") and
+                      ``content`` (str) keys.
+        user_message: The latest message from the user.
+
+    Returns:
+        The model's plain-text reply.
+
+    Raises:
+        EnvironmentError: If required env vars are missing.
+        botocore.exceptions.ClientError: On Bedrock API errors.
+    """
+    model_id = os.getenv("MODEL_ID")
+    if not model_id:
+        raise EnvironmentError("MODEL_ID is not set in the environment.")
+
+    system_prompt = (
+        "You are Kelana, a knowledgeable and friendly AI travel assistant. "
+        "Help users plan trips, suggest destinations, create itineraries, "
+        "recommend accommodations and restaurants, and answer any travel-related questions. "
+        "Be concise but thorough. Format the responses in markdown"
+    )
+
+    # Build the messages list from history, then append the new user message.
+    # Bedrock Converse API expects alternating user/assistant turns.
+    messages = [
+        {"role": msg["role"], "content": [{"text": msg["content"]}]}
+        for msg in history
+    ]
+    messages.append({"role": "user", "content": [{"text": user_message}]})
+
+    client = get_bedrock_client()
+
+    response = client.converse(
+        modelId=model_id,
+        system=[{"text": system_prompt}],
+        messages=messages,
     )
 
     return response["output"]["message"]["content"][0]["text"]
