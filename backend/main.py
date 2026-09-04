@@ -23,6 +23,7 @@ from database import init_db, SessionLocal
 from services.bedrock_service import get_ai_recommendation, get_conversation_ai_reply
 from services.kb_service import ask_knowledge_base
 from dotenv import load_dotenv
+import os
 
 
 class TripRequest(BaseModel):
@@ -83,13 +84,16 @@ load_dotenv()
 init_db()
 app: FastAPI = FastAPI()
 
+# Get frontend URL from environment
+frontend_url = os.getenv("FRONTEND_URL")
+
 # CORS configuration    
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        frontend_url,
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        # "https://kelana-ai.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
